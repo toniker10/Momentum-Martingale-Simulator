@@ -1,0 +1,327 @@
+//@version=6
+indicator("Momentum Martingale Simulator", overlay = false, precision = 2)
+
+// ---------------- ΡΥΘΜΙΣΕΙΣ ----------------
+initialCapital = input.float(10000.0, "Αρχικό Κεφάλαιο ($)", group = "Κεφάλαιο")
+initialBet = input.float(100.0, "Αρχικό Ποντάρισμα ($)", group = "Κεφάλαιο")
+profitTarget = input.float(15000.0, "Στόχος Κέρδους - ΝΙΚΗ ($)", group = "Κεφάλαιο")
+resetEachYear = input.bool(true, "Reset κάθε 1η Ιανουαρίου", group = "Κεφάλαιο")
+showLabels = input.bool(true, "Εμφάνιση ετικετών πάνω στα κεριά", group = "Εμφάνιση")
+labelDaysBack = input.int(60, "Ετικέτες: μόνο τις τελευταίες Χ μέρες", minval = 5, maxval = 500, group = "Εμφάνιση")
+tablePosition = input.string("Πάνω Δεξιά", "Θέση Πίνακα", options = ["Πάνω Δεξιά", "Πάνω Αριστερά", "Πάνω Κέντρο"], group = "Εμφάνιση")
+tableTextSize = input.string("Κανονικό", "Μέγεθος Κειμένου Πίνακα", options = ["Μικρό", "Κανονικό", "Μεγάλο"], group = "Εμφάνιση")
+
+// ---------------- ΠΑΛΕΤΑ ΧΡΩΜΑΤΩΝ ----------------
+colBgHeader = color.rgb(30, 41, 82)
+colBgLabel = color.rgb(24, 27, 38)
+colBgValue = color.rgb(17, 19, 28)
+colBgHighlight = color.rgb(40, 36, 20)
+colBorder = color.rgb(55, 60, 78)
+colTextPrimary = color.rgb(235, 237, 242)
+colTextSecondary = color.rgb(148, 155, 176)
+colGreen = color.rgb(70, 209, 140)
+colRed = color.rgb(235, 87, 87)
+colGold = color.rgb(240, 185, 80)
+
+// ---------------- ΜΕΤΑΒΛΗΤΕΣ ΚΑΤΑΣΤΑΣΗΣ ----------------
+var float capital = initialCapital
+var float bet = initialBet
+var int winStreak = 0
+var int lossStreak = 0
+var int maxWinStreak = 0
+var int maxLossStreak = 0
+var float maxBetReached = initialBet
+var bool blownUp = false
+var bool targetHit = false
+
+// ---------------- ΙΣΤΟΡΙΚΟ ΑΝΑ ΕΤΟΣ ----------------
+var array<int> histYears = array.new<int>()
+var array<float> histFinalCap = array.new<float>()
+var array<bool> histBlown = array.new<bool>()
+var array<bool> histTarget = array.new<bool>()
+
+newYear = resetEachYear and not na(close[1]) and year(time) != year(time[1])
+
+if newYear
+    array.push(histYears, year(time[1]))
+    array.push(histFinalCap, capital)
+    array.push(histBlown, blownUp)
+    array.push(histTarget, targetHit)
+
+    capital := initialCapital
+    bet := initialBet
+    winStreak := 0
+    lossStreak := 0
+    maxWinStreak := 0
+    maxLossStreak := 0
+    maxBetReached := initialBet
+    blownUp := false
+    targetHit := false
+
+// ---------------- ΗΜΕΡΟΜΗΝΙΕΣ ΓΙΑ ΕΛΕΓΧΟ ----------------
+yesterdayDateText = str.tostring(dayofmonth(time[1])) + "/" + str.tostring(month(time[1]))
+todayDateText = str.tostring(dayofmonth(time)) + "/" + str.tostring(month(time))
+
+// ---------------- ΧΡΩΜΑ ΚΕΡΙΟΥ ----------------
+yesterdayWasGreen = close[1] > open[1]
+todayIsGreen = close[0] > open[0]
+haveHistory = not na(close[1]) and not na(open[1])
+
+directionToday = "N/A"
+if haveHistory and yesterdayWasGreen
+    directionToday := "BUY"
+if haveHistory and not yesterdayWasGreen
+    directionToday := "SELL"
+
+isWin = false
+if directionToday == "BUY" and todayIsGreen
+    isWin := true
+if directionToday == "SELL" and not todayIsGreen
+    isWin := true
+
+betUsedToday = bet
+
+// ---------------- ΚΑΤΑΣΤΑΣΗ ΚΕΡΙΟΥ: ΖΩΝΤΑΝΟ Η ΟΡΙΣΤΙΚΟ ----------------
+barIsLive = not barstate.isconfirmed
+
+// ---------------- ΛΟΓΙΚΗ MARTINGALE ----------------
+tradeHappened = false
+
+if haveHistory and barstate.isconfirmed and not blownUp and not targetHit
+    tradeHappened := true
+    if bet > capital
+        capital := 0.0
+        blownUp := true
+    else
+        if isWin
+            capital := capital + bet
+            winStreak := winStreak + 1
+            lossStreak := 0
+            bet := initialBet
+            if capital >= profitTarget
+                targetHit := true
+        else
+            capital := capital - bet
+            lossStreak := lossStreak + 1
+            winStreak := 0
+            bet := bet * 2
+        maxWinStreak := math.max(maxWinStreak, winStreak)
+        maxLossStreak := math.max(maxLossStreak, lossStreak)
+        maxBetReached := math.max(maxBetReached, bet)
+
+// ---------------- ΠΡΟΒΟΛΗ ΚΕΦΑΛΑΙΟΥ ----------------
+displayCapital = capital
+if barIsLive and haveHistory and not blownUp and not targetHit
+    if bet > capital
+        displayCapital := 0.0
+    else
+        if isWin
+            displayCapital := capital + bet
+        else
+            displayCapital := capital - bet
+
+// ---------------- ΕΤΙΚΕΤΕΣ ΠΑΝΩ ΣΤΑ ΚΕΡΙΑ ----------------
+resultText = "LOSS"
+if blownUp
+    resultText := "BLOWN"
+else if targetHit
+    resultText := "TARGET WIN"
+else if isWin
+    resultText := "WIN"
+
+betText = str.tostring(betUsedToday, "#")
+
+lineOne = "Xthes " + yesterdayDateText + ": " + (yesterdayWasGreen ? "GREEN" : "RED")
+lineTwo = "Simera " + todayDateText + ": " + directionToday
+lineThree = resultText + " $" + betText
+lineFour = "Κεφαλαιο: $" + str.tostring(capital, "#,###.##")
+
+labelText = lineOne + "\n" + lineTwo + "\n" + lineThree + "\n" + lineFour
+
+labelColor = color.new(colRed, 20)
+if blownUp
+    labelColor := color.new(colRed, 0)
+else if targetHit
+    labelColor := color.new(colGold, 0)
+else if isWin
+    labelColor := color.new(colGreen, 20)
+
+labelStyle = label.style_label_down
+labelYloc = yloc.abovebar
+if directionToday == "BUY"
+    labelStyle := label.style_label_up
+    labelYloc := yloc.belowbar
+
+recentEnough = time > (timenow - labelDaysBack * 86400000)
+
+if showLabels and tradeHappened and recentEnough
+    label.new(bar_index, na, labelText, yloc = labelYloc, style = labelStyle, color = labelColor, textcolor = color.white, size = size.tiny, force_overlay = true)
+
+// ---------------- ΓΡΑΦΗΜΑ ΚΕΦΑΛΑΙΟΥ ----------------
+lineColor = colGreen
+if blownUp
+    lineColor := colRed
+else if targetHit
+    lineColor := colGold
+
+plot(capital, title = "Κεφάλαιο ($)", color = lineColor, linewidth = 2)
+hline(initialCapital, "Αρχικό Κεφάλαιο", color = color.new(colTextSecondary, 40), linestyle = hline.style_dashed)
+hline(profitTarget, "Στόχος Κέρδους", color = color.new(colGold, 40), linestyle = hline.style_dashed)
+hline(0, "Μηδέν", color = color.new(colRed, 60))
+
+color bgColorPlot = na
+if blownUp
+    bgColorPlot := color.new(colRed, 90)
+else if targetHit
+    bgColorPlot := color.new(colGold, 90)
+bgcolor(bgColorPlot)
+
+// ---------------- ΘΕΣΗ & ΜΕΓΕΘΟΣ ΠΙΝΑΚΑ ----------------
+tablePos = position.top_right
+if tablePosition == "Πάνω Αριστερά"
+    tablePos := position.top_left
+if tablePosition == "Πάνω Κέντρο"
+    tablePos := position.top_center
+
+txtSize = size.normal
+if tableTextSize == "Μικρό"
+    txtSize := size.small
+if tableTextSize == "Μεγάλο"
+    txtSize := size.large
+
+// ---------------- ΠΙΝΑΚΑΣ ΑΠΟΤΕΛΕΣΜΑΤΩΝ ----------------
+var table statsTable = table.new(tablePos, 2, 12, border_width = 1, border_color = colBorder, frame_color = colBorder, frame_width = 2, force_overlay = true)
+
+if barstate.islast
+    resultLabel = "ΗΤΤΑ"
+    resultColor = colRed
+    if blownUp
+        resultLabel := "ΑΝΑΤΙΝΑΞΗ"
+        resultColor := colRed
+    else if targetHit
+        resultLabel := "ΝΙΚΗ - ΣΤΟΧΟΣ!"
+        resultColor := colGold
+    else if isWin
+        resultLabel := "ΝΙΚΗ"
+        resultColor := colGreen
+
+    capitalColor = colGreen
+    if displayCapital <= 0
+        capitalColor := colRed
+    if targetHit
+        capitalColor := colGold
+
+    capitalHighlightBg = colBgHighlight
+    if displayCapital <= 0
+        capitalHighlightBg := color.rgb(50, 20, 20)
+
+    symbolText = syminfo.ticker + " · " + timeframe.period
+
+    liveStatusText = barIsLive ? "ζωντανό - προσωρινό" : "οριστικό"
+    liveStatusColor = barIsLive ? colGold : colGreen
+
+    yesterdayLine = yesterdayDateText + " (" + (yesterdayWasGreen ? "πράσινο" : "κόκκινο") + ")"
+    todayLine = todayDateText + " → " + directionToday
+    dirColor = directionToday == "BUY" ? colGreen : colTextPrimary
+    if directionToday == "SELL"
+        dirColor := colGold
+
+    startBetLine = "$" + str.tostring(initialBet, "#,###") + " → $" + str.tostring(bet, "#,###")
+
+    table.cell(statsTable, 0, 0, "MOMENTUM MARTINGALE", text_color = colTextPrimary, bgcolor = colBgHeader, text_size = txtSize)
+    table.cell(statsTable, 1, 0, symbolText, text_color = colTextSecondary, bgcolor = colBgHeader, text_size = txtSize)
+
+    table.cell(statsTable, 0, 1, "ΚΕΦΑΛΑΙΟ ΤΩΡΑ", text_color = colTextSecondary, bgcolor = capitalHighlightBg, text_size = size.large)
+    table.cell(statsTable, 1, 1, "$" + str.tostring(displayCapital, "#,###.##"), text_color = capitalColor, bgcolor = capitalHighlightBg, text_size = size.large)
+
+    table.cell(statsTable, 0, 2, "Εκκίνηση → Στόχος", text_color = colTextSecondary, bgcolor = colBgLabel, text_size = txtSize)
+    table.cell(statsTable, 1, 2, "$" + str.tostring(initialCapital, "#,###") + " → $" + str.tostring(profitTarget, "#,###"), text_color = colTextPrimary, bgcolor = colBgValue, text_size = txtSize)
+
+    table.cell(statsTable, 0, 3, "Ποντάρισμα (αρχ.→τρέχ.)", text_color = colTextSecondary, bgcolor = colBgLabel, text_size = txtSize)
+    table.cell(statsTable, 1, 3, startBetLine, text_color = colTextPrimary, bgcolor = colBgValue, text_size = txtSize)
+
+    table.cell(statsTable, 0, 4, "Χθεσινό Κερί", text_color = colTextSecondary, bgcolor = colBgLabel, text_size = txtSize)
+    table.cell(statsTable, 1, 4, yesterdayLine, text_color = colTextPrimary, bgcolor = colBgValue, text_size = txtSize)
+
+    table.cell(statsTable, 0, 5, "Σήμερα → Κατεύθυνση", text_color = colTextSecondary, bgcolor = colBgLabel, text_size = txtSize)
+    table.cell(statsTable, 1, 5, todayLine, text_color = dirColor, bgcolor = colBgValue, text_size = txtSize)
+
+    table.cell(statsTable, 0, 6, "Αποτέλεσμα", text_color = colTextSecondary, bgcolor = colBgLabel, text_size = txtSize)
+    table.cell(statsTable, 1, 6, resultLabel, text_color = resultColor, bgcolor = colBgValue, text_size = txtSize)
+
+    table.cell(statsTable, 0, 7, "Κατάσταση Κεριού", text_color = colTextSecondary, bgcolor = colBgLabel, text_size = txtSize)
+    table.cell(statsTable, 1, 7, liveStatusText, text_color = liveStatusColor, bgcolor = colBgValue, text_size = txtSize)
+
+    table.cell(statsTable, 0, 8, "Τρέχον Σερί Ηττών", text_color = colTextSecondary, bgcolor = colBgLabel, text_size = txtSize)
+    table.cell(statsTable, 1, 8, str.tostring(lossStreak), text_color = colRed, bgcolor = colBgValue, text_size = txtSize)
+
+    table.cell(statsTable, 0, 9, "Μέγιστο Ποντάρισμα", text_color = colTextSecondary, bgcolor = colBgLabel, text_size = txtSize)
+    table.cell(statsTable, 1, 9, "$" + str.tostring(maxBetReached, "#,###.##"), text_color = colGold, bgcolor = colBgValue, text_size = txtSize)
+
+    table.cell(statsTable, 0, 10, "Μέγιστο Σερί Ηττών", text_color = colTextSecondary, bgcolor = colBgLabel, text_size = txtSize)
+    table.cell(statsTable, 1, 10, str.tostring(maxLossStreak), text_color = colTextPrimary, bgcolor = colBgValue, text_size = txtSize)
+
+    finalStatus = "ΕΠΙΒΙΩΣΗ"
+    finalColor = colGreen
+    if blownUp
+        finalStatus := "ΑΝΑΤΙΝΑΞΗ"
+        finalColor := colRed
+    else if targetHit
+        finalStatus := "ΝΙΚΗ - ΣΤΟΧΟΣ!"
+        finalColor := colGold
+    table.cell(statsTable, 0, 11, "Τελική Κατάσταση", text_color = color.rgb(10, 10, 10), bgcolor = finalColor, text_size = txtSize)
+    table.cell(statsTable, 1, 11, finalStatus, text_color = color.rgb(10, 10, 10), bgcolor = finalColor, text_size = txtSize)
+
+// ---------------- ΠΙΝΑΚΑΣ ΙΣΤΟΡΙΚΟΥ ΑΝΑ ΕΤΟΣ ----------------
+var table yearlyTable = table.new(position.bottom_right, 3, 27, border_width = 1, border_color = colBorder, frame_color = colBorder, frame_width = 2, force_overlay = true)
+
+if barstate.islast
+    table.cell(yearlyTable, 0, 0, "ΕΤΟΣ", text_color = colTextPrimary, bgcolor = colBgHeader, text_size = txtSize)
+    table.cell(yearlyTable, 1, 0, "ΚΕΦΑΛΑΙΟ", text_color = colTextPrimary, bgcolor = colBgHeader, text_size = txtSize)
+    table.cell(yearlyTable, 2, 0, "ΑΠΟΤΕΛΕΣΜΑ", text_color = colTextPrimary, bgcolor = colBgHeader, text_size = txtSize)
+
+    nYears = array.size(histYears)
+    maxShow = 25
+    startIdx = nYears > maxShow ? nYears - maxShow : 0
+    rowNum = 1
+
+    if nYears > 0
+        for i = startIdx to nYears - 1
+            yr = array.get(histYears, i)
+            fc = array.get(histFinalCap, i)
+            bl = array.get(histBlown, i)
+            tg = array.get(histTarget, i)
+
+            resTxt = "ΖΗΜΙΑ"
+            resColor = colTextSecondary
+            if bl
+                resTxt := "ΑΝΑΤΙΝΑΞΗ"
+                resColor := colRed
+            else if tg
+                resTxt := "ΝΙΚΗ"
+                resColor := colGold
+            else if fc > initialCapital
+                resTxt := "ΚΕΡΔΟΣ"
+                resColor := colGreen
+
+            rowBg = colBgValue
+            table.cell(yearlyTable, 0, rowNum, str.tostring(yr), text_color = colTextPrimary, bgcolor = rowBg, text_size = txtSize)
+            table.cell(yearlyTable, 1, rowNum, "$" + str.tostring(fc, "#,###"), text_color = resColor, bgcolor = rowBg, text_size = txtSize)
+            table.cell(yearlyTable, 2, rowNum, resTxt, text_color = resColor, bgcolor = rowBg, text_size = txtSize)
+            rowNum := rowNum + 1
+
+    curResTxt = "ζημιά έως τώρα"
+    curResColor = colTextSecondary
+    if blownUp
+        curResTxt := "ΑΝΑΤΙΝΑΞΗ"
+        curResColor := colRed
+    else if targetHit
+        curResTxt := "ΝΙΚΗ"
+        curResColor := colGold
+    else if displayCapital > initialCapital
+        curResTxt := "κέρδος έως τώρα"
+        curResColor := colGreen
+
+    table.cell(yearlyTable, 0, rowNum, str.tostring(year(time)) + " •", text_color = colTextPrimary, bgcolor = colBgHighlight, text_size = txtSize)
+    table.cell(yearlyTable, 1, rowNum, "$" + str.tostring(displayCapital, "#,###"), text_color = curResColor, bgcolor = colBgHighlight, text_size = txtSize)
+    table.cell(yearlyTable, 2, rowNum, curResTxt, text_color = curResColor, bgcolor = colBgHighlight, text_size = txtSize)
