@@ -1,59 +1,58 @@
-# Momentum Martingale Simulator (Pine Script v6)
+# Momentum Martingale Simulator
 
-A TradingView indicator that simulates a **Martingale** strategy driven by a
-simple "momentum" rule: if yesterday's candle was green, it opens a "BUY" for
-today; if it was red, it opens a "SELL". Every loss doubles the bet
-(martingale), and every win resets the bet back to the initial amount.
-
-⚠️ **This is an educational/simulation tool, not investment advice.**
-The Martingale strategy carries a very high risk of a total capital
-"blow-up".
+A Pine Script (v6) indicator for TradingView. This is an **educational/simulation tool** — it is **not a trading strategy meant for actual use**. It shows what would happen if someone played Martingale betting on top of a simple prediction method, using real historical data.
 
 ## What it does
 
-- Starts with an `Initial Capital` and an `Initial Bet`.
-- On each new bar, it compares yesterday's candle color to today's outcome
-  and determines a win or a loss.
-- On a **win**: capital increases by the current bet, and the bet resets
-  back to the initial amount.
-- On a **loss**: capital decreases by the current bet, and the next bet
-  doubles.
-- If the bet would exceed the available capital → "BLOWN UP", capital is
-  set to zero and the simulation stops for the current year.
-- If capital reaches the `Profit Target` → "TARGET WIN" and the simulation
-  stops.
-- Optional **reset every January 1st**, with a yearly history table
-  (profit/loss/blow-up/target reached for each past year).
+### 1. Prediction method (momentum-based)
+- Looks at the color of yesterday's candle
+- Yesterday green → today's prediction: **BUY**
+- Yesterday red → today's prediction: **SELL**
+- Assumption: the previous day's direction continues
 
-## Settings (Inputs)
+### 2. Evaluation
+- **WIN** if the prediction is confirmed today (e.g. BUY + today's candle is green)
+- **LOSS** otherwise
 
-| Setting | Description |
-|---|---|
-| Initial Capital ($) | Starting point of the simulated capital |
-| Initial Bet ($) | Bet size at the start of each new cycle |
-| Profit Target - WIN ($) | Capital level that triggers a "win" |
-| Reset every January 1st | Restarts the simulation each new year |
-| Show labels on candles | Toggles the on-chart labels |
-| Labels: last X days only | Limits how many recent labels are shown (for performance) |
-| Table Position | Top Right / Top Left / Top Center |
-| Table Text Size | Small / Normal / Large |
+### 3. Martingale betting logic
+- Starts with an initial bet (`initialBet`)
+- **WIN** → wins the bet, returns to the initial bet amount
+- **LOSS** → loses the bet, the next bet is doubled
+- If bet > available capital → **BLOWN** (account wipeout, reset to zero)
+- If capital ≥ `profitTarget` → **TARGET WIN**
 
-## Installing on TradingView
+### 4. Yearly reset (optional)
+On January 1st, everything restarts from the beginning, and the previous year's result is saved to the history table.
 
-1. Open TradingView → **Pine Editor**.
-2. Copy the entire contents of `momentum_martingale_simulator.pine`.
-3. Click **Add to Chart**.
-4. Adjust the inputs from the indicator's gear icon (⚙️).
+## Inputs
 
-## Known limitations
+| Parameter | Default | Description |
+|---|---|---|
+| Initial Capital | $10,000 | Starting point |
+| Initial Bet | $100 | Bet size after every WIN, or at the start |
+| Profit Target | $15,000 | Above this capital level → "WIN" |
+| Reset every January 1st | Yes | Restarts from the beginning every year |
+| Show labels | Yes | Labels on candles with WIN/LOSS/BLOWN |
+| Labels: last X days | 60 | Limits the labels so the chart doesn't get cluttered |
+| Table position/size | — | Purely aesthetic settings |
 
-- The "yesterday/today" logic relies on the last two closed candles of
-  whatever timeframe you have selected — on intraday timeframes this
-  doesn't literally correspond to "days".
-- The history table shows up to 25 years.
-- Commissions/spread are not accounted for — this is a purely theoretical
-  simulation.
+## What it shows on the chart
 
-## Files
+- **Capital chart** (bottom panel, `overlay = false`) — the path of the simulated capital, day by day
+- **Statistics table** (top right, configurable) — current capital, max bet, current/max losing streak, candle status
+- **Yearly history table** (bottom right) — final result for each year (PROFIT / LOSS / WIN / BLOWN)
 
-- `momentum_martingale_simulator.pine` — the indicator's source code.
+## The core message
+
+Martingale betting does **not** change the statistical probability of winning — it just increases risk exponentially ($100 → $200 → $400 → $800 → $1,600 …). A sufficiently long losing streak (statistically inevitable over the long run) leads to a total loss of capital, regardless of how "good" the prediction method looks in the short term. This tool exists to show, visually, how quickly that happens, using real data.
+
+## Risk / Disclaimer
+
+This is a simulation using historical data, **not** investment advice or a guarantee of future performance. The prediction method (yesterday's color → tomorrow's direction) has no proven statistical basis (it is not certain that a real momentum edge exists on the daily timeframe), and Martingale staking is one of the most dangerous money management methods that exist. It does not account for slippage, spreads, commissions, or liquidity.
+
+## Installation
+
+1. TradingView → Pine Editor (bottom panel)
+2. Paste the code
+3. "Save" → "Add to chart"
+4. Configure parameters via the gear icon on the indicator
